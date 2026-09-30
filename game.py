@@ -28,17 +28,33 @@ def platform_y(platform, x):
 
 def theme_color(score):
     """Return an (r, g, b) background colour for the current score, or None for the default."""
-    pass
+    if score <= 0:
+        return None
+
+    # Gradually shift from the default navy toward a warm orange
+    t = min(score / 1000, 1.0)
+
+    r = int(15 + (180 - 15) * t)
+    g = int(15 + (80 - 15) * t)
+    b = int(25 + (40 - 25) * t)
+
+    return (r, g, b)
 
 
 def on_barrel_jumped(player, barrel):
     """Called when the player clears a barrel; add a bonus effect here."""
-    pass
+    player.score_popup = {
+        "text": "+100",
+        "pos": pygame.Vector2(barrel.pos),
+        "timer": 0.6
+    }
 
 
 def score_multiplier(score):
     """Return a multiplier applied to points earned from clearing a barrel, or None for the default 1x."""
-    pass
+    if score >= 500:
+        return 2
+    return None
 
 
 class Player:
@@ -50,6 +66,7 @@ class Player:
         self.vel = pygame.Vector2()
         self.on_ground = True
         self.ladder = None
+        self.score_popup = None
 
     def center(self):
         return pygame.Vector2(self.pos.x, self.pos.y - PLAYER_H / 2)
@@ -164,7 +181,7 @@ class Barrel:
         for index, (lx, _, upper) in enumerate(LADDERS):
             if upper == self.plat and abs(self.pos.x - lx) < 3 and index not in self.skip:
                 self.skip.add(index)
-                if random.random() < 0.7:
+                if random.random() < 0.3:
                     self.ladder = index
                     self.pos.x = lx
 
@@ -187,6 +204,10 @@ def draw_scene(screen, font, player, barrels, score, lives, state):
     body = pygame.Rect(0, 0, PLAYER_W, PLAYER_H)
     body.midbottom = (player.pos.x, player.pos.y)
     pygame.draw.rect(screen, (50, 180, 240), body)
+    if player.score_popup:
+        popup = player.score_popup
+        label = font.render(popup["text"], True, (255, 255, 100))
+        screen.blit(label, label.get_rect(center=popup["pos"]))
     hud = font.render(f"Score {score}   Lives {lives}   R = reset", True, (240, 240, 240))
     screen.blit(hud, (10, 8))
     if state != "play":
@@ -206,6 +227,12 @@ def main():
     running = True
     while running:
         dt = min(clock.tick(60) / 1000, 0.05)
+        if player.score_popup:
+            player.score_popup["pos"].y -= 40 * dt
+            player.score_popup["timer"] -= dt
+
+            if player.score_popup["timer"] <= 0:
+                player.score_popup = None
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -231,10 +258,19 @@ def main():
                     state = "play" if lives > 0 else "lose"
                     break
                 above = 0 < barrel.pos.y - player.pos.y + BARREL_R < 40
-                if not player.on_ground and above and abs(barrel.pos.x - player.pos.x) < 12 and not barrel.scored:
+                if (
+                    not player.on_ground
+                    and abs(barrel.pos.x - player.pos.x) < 25
+                    and player.pos.y < barrel.pos.y - 5
+                    and not barrel.scored
+                ):
                     barrel.scored = True
-                    score += int(100 * (score_multiplier(score) or 1))
-                    on_barrel_jumped(player, barrel)
+
+                    score += int(
+                        100 * (score_multiplier(score) or 1)
+                    )
+
+                on_barrel_jumped(player, barrel)
             barrels[:] = [b for b in barrels if b.pos.y < HEIGHT + 30]
             if player.center().distance_to(pygame.Vector2(PRINCESS_POS)) < 24:
                 score += 1000
